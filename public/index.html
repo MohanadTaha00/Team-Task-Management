@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in · Team Tasks</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="brand" style="margin-bottom: 18px;">
+        <span class="brand-mark">T</span>
+        <span>Team Tasks</span>
+      </div>
+      <h1>Welcome back</h1>
+      <p class="subtitle">Sign in to see the tasks assigned to you.</p>
+
+      <div id="error" class="error" style="display:none;"></div>
+
+      <form id="loginForm" autocomplete="on">
+        <div class="field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" autocomplete="username" required autofocus />
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="btn btn-primary block" id="submitBtn">Sign in</button>
+      </form>
+
+      <div class="hint">
+        <strong>Demo accounts:</strong><br />
+        Admin — <code>admin</code> / <code>admin123</code><br />
+        Member — <code>alice</code> / <code>alice123</code>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/shared.js"></script>
+  <script>
+    (async () => {
+      // If already logged in, skip the login page.
+      try {
+        const me = await api('/api/me');
+        window.location.href = me.role === 'admin' ? '/dashboard.html' : '/dashboard.html';
+      } catch (_) { /* not signed in, stay here */ }
+    })();
+
+    const form = document.getElementById('loginForm');
+    const errorBox = document.getElementById('error');
+    const submitBtn = document.getElementById('submitBtn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Signing in…';
+      try {
+        const user = await api('/api/login', {
+          method: 'POST',
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value
+          })
+        });
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        errorBox.textContent = err.message;
+        errorBox.style.display = 'block';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Sign in';
+      }
+    });
+  </script>
+</body>
+</html>

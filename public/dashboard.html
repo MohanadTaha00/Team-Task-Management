@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Tasks · Team Tasks</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div id="header"></div>
+  <main class="container">
+    <h1 class="page-title" id="greeting">My Tasks</h1>
+    <p class="page-subtitle" id="subtitle">Here are the tasks assigned to you.</p>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="toolbar" id="filters">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="pending">Pending</button>
+      <button class="filter-btn" data-filter="in_progress">In Progress</button>
+      <button class="filter-btn" data-filter="completed">Completed</button>
+    </div>
+
+    <div id="taskContainer"></div>
+  </main>
+
+  <script src="/js/shared.js"></script>
+  <script>
+    let currentUser = null;
+    let allTasks = [];
+    let currentFilter = 'all';
+
+    const STATUS_LABEL = {
+      pending: 'Pending',
+      in_progress: 'In Progress',
+      completed: 'Completed'
+    };
+
+    function renderStats(tasks) {
+      const counts = {
+        total: tasks.length,
+        pending: tasks.filter(t => t.status === 'pending').length,
+        in_progress: tasks.filter(t => t.status === 'in_progress').length,
+        completed: tasks.filter(t => t.status === 'completed').length
+      };
+      document.getElementById('stats').innerHTML = `
+        <div class="stat"><div class="label">Total</div><div class="value">${counts.total}</div></div>
+        <div class="stat"><div class="label">Pending</div><div class="value">${counts.pending}</div></div>
+        <div class="stat"><div class="label">In Progress</div><div class="value">${counts.in_progress}</div></div>
+        <div class="stat"><div class="label">Completed</div><div class="value">${counts.completed}</div></div>
+      `;
+    }
+
+    function renderTasks() {
+      const container = document.getElementById('taskContainer');
+      const filtered = currentFilter === 'all'
+        ? allTasks
+        : allTasks.filter(t => t.status === currentFilter);
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="empty">
+            <strong>No tasks here.</strong><br />
+            ${currentFilter === 'all'
+              ? 'You have no tasks assigned to you yet.'
+              : `You have no ${STATUS_LABEL[currentFilter].toLowerCase()} tasks.`}
+          </div>`;
+        return;
+      }
+
+      const isAdmin = currentUser.role === 'admin';
+      container.innerHTML = `<div class="task-list">${
+        filtered.map(t => `
+          <div class="task priority-${t.priority}">
+            <div>
+              <h3>${escapeHtml(t.title)}</h3>
+              ${t.description ? `<p>${escapeHtml(t.description)}</p>` : ''}
+              <div class="task-meta">
+                <span class="badge status-${t.status}">${STATUS_LABEL[t.status]}</span>
+                <span class="badge prio-${t.priority}">${t.priority} priority</span>
+                ${isAdmin ? `<span>Assigned to <strong>${escapeHtml(t.assignee_name)}</strong></span>` : ''}
+                ${t.due_date ? `<span>Due ${formatDate(t.due_date)}</span>` : ''}
+                <span>Created ${formatDate(t.created_at)}</span>
+              </div>
+            </div>
+            <div class="task-actions">
+              <select class="status-select" data-id="${t.id}">
+                <option value="pending"     ${t.status === 'pending'     ? 'selected' : ''}>Pending</option>
+                <option value="in_progress" ${t.status === 'in_progress' ? 'selected' : ''}>In Progress</option>
+                <option value="completed"   ${t.status === 'completed'   ? 'selected' : ''}>Completed</option>
+              </select>
+            </div>
+          </div>
+        `).join('')
+      }</div>`;
+
+      container.querySelectorAll('.status-select').forEach(sel => {
+        sel.addEventListener('change', async (e) => {
+          const id = e.target.dataset.id;
+          const status = e.target.value;
+          try {
+            await api(`/api/tasks/${id}/status`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status })
+            });
+            toast('Task updated');
+            await loadTasks();
+          } catch (err) {
+            toast(err.message, 'error');
+          }
+        });
+      });
+    }
+
+    async function loadTasks() {
+      allTasks = await api('/api/tasks');
+      renderStats(allTasks);
+      renderTasks();
+    }
+
+    (async () => {
+      currentUser = await requireSession();
+      if (!currentUser) return;
+
+      document.getElementById('header').innerHTML = renderHeader(currentUser, 'dashboard');
+      attachLogout();
+
+      document.getElementById('greeting').textContent =
+        `Hi ${currentUser.full_name.split(' ')[0]}, here are your tasks`;
+      if (currentUser.role === 'admin') {
+        document.getElementById('subtitle').textContent =
+          'As an admin you see every task in the workspace.';
+      }
+
+      document.querySelectorAll('#filters .filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#filters .filter-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentFilter = btn.dataset.filter;
+          renderTasks();
+        });
+      });
+
+      await loadTasks();
+    })();
+  </script>
+</body>
+</html>

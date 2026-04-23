@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin · Team Tasks</title>
+  <link rel="stylesheet" href="/css/styles.css" />
+</head>
+<body>
+  <div id="header"></div>
+  <main class="container">
+    <h1 class="page-title">Admin Panel</h1>
+    <p class="page-subtitle">Create team members and assign tasks.</p>
+
+    <div class="grid-2">
+      <!-- New task -->
+      <section class="card">
+        <div class="card-header"><h2>Assign a new task</h2></div>
+        <div class="card-body">
+          <div id="taskError" class="error" style="display:none;"></div>
+          <form id="taskForm">
+            <div class="field">
+              <label for="title">Title</label>
+              <input type="text" id="title" required maxlength="140" />
+            </div>
+            <div class="field">
+              <label for="description">Description</label>
+              <textarea id="description" rows="3" placeholder="Optional details"></textarea>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="assignee">Assign to</label>
+                <select id="assignee" required></select>
+              </div>
+              <div class="field">
+                <label for="priority">Priority</label>
+                <select id="priority">
+                  <option value="low">Low</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+            </div>
+            <div class="field">
+              <label for="due_date">Due date (optional)</label>
+              <input type="date" id="due_date" />
+            </div>
+            <button type="submit" class="btn btn-primary">Create task</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- New user -->
+      <section class="card">
+        <div class="card-header"><h2>Add a team member</h2></div>
+        <div class="card-body">
+          <div id="userError" class="error" style="display:none;"></div>
+          <form id="userForm">
+            <div class="row">
+              <div class="field">
+                <label for="full_name">Full name</label>
+                <input type="text" id="full_name" required />
+              </div>
+              <div class="field">
+                <label for="new_username">Username</label>
+                <input type="text" id="new_username" required pattern="[A-Za-z0-9_.-]{3,}" title="At least 3 characters; letters, numbers, _ . -" />
+              </div>
+            </div>
+            <div class="row">
+              <div class="field">
+                <label for="new_password">Password</label>
+                <input type="password" id="new_password" required minlength="6" />
+              </div>
+              <div class="field">
+                <label for="role">Role</label>
+                <select id="role">
+                  <option value="member" selected>Member</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Create user</button>
+          </form>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:24px;">
+      <div class="card-header"><h2>Team members</h2></div>
+      <div class="card-body" style="padding:0;">
+        <table>
+          <thead>
+            <tr><th>Name</th><th>Username</th><th>Role</th><th style="width:120px;"></th></tr>
+          </thead>
+          <tbody id="usersTable"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:24px;">
+      <div class="card-header"><h2>All tasks</h2></div>
+      <div class="card-body" style="padding:0;">
+        <table>
+          <thead>
+            <tr>
+              <th>Task</th><th>Assignee</th><th>Priority</th><th>Status</th><th>Due</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="tasksTable"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/shared.js"></script>
+  <script>
+    let currentUser = null;
+    let users = [];
+
+    const STATUS_LABEL = { pending: 'Pending', in_progress: 'In Progress', completed: 'Completed' };
+
+    async function loadUsers() {
+      users = await api('/api/users');
+      // Assignee dropdown (members + admins — anyone can be assigned).
+      const assignee = document.getElementById('assignee');
+      assignee.innerHTML = users
+        .map(u => `<option value="${u.id}">${escapeHtml(u.full_name)} (${escapeHtml(u.username)})</option>`)
+        .join('');
+
+      // Users table
+      const tbody = document.getElementById('usersTable');
+      tbody.innerHTML = users.map(u => `
+        <tr>
+          <td>${escapeHtml(u.full_name)}</td>
+          <td><code>${escapeHtml(u.username)}</code></td>
+          <td><span class="role-pill">${u.role}</span></td>
+          <td style="text-align:right;">
+            ${u.id === currentUser.id
+              ? '<span style="color:var(--text-muted);font-size:12px;">(you)</span>'
+              : `<button class="btn btn-danger btn-sm" data-delete-user="${u.id}">Delete</button>`}
+          </td>
+        </tr>
+      `).join('');
+      tbody.querySelectorAll('[data-delete-user]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.deleteUser;
+          const u = users.find(x => x.id == id);
+          if (!confirm(`Delete user "${u.full_name}"? Their tasks will also be removed.`)) return;
+          try {
+            await api(`/api/users/${id}`, { method: 'DELETE' });
+            toast('User deleted');
+            await Promise.all([loadUsers(), loadTasks()]);
+          } catch (err) { toast(err.message, 'error'); }
+        });
+      });
+    }
+
+    async function loadTasks() {
+      const tasks = await api('/api/tasks');
+      const tbody = document.getElementById('tasksTable');
+      if (tasks.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" style="padding:24px;text-align:center;color:var(--text-muted);">No tasks yet.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = tasks.map(t => `
+        <tr>
+          <td>
+            <div style="font-weight:600;">${escapeHtml(t.title)}</div>
+            ${t.description ? `<div style="font-size:12px;color:var(--text-muted);">${escapeHtml(t.description)}</div>` : ''}
+          </td>
+          <td>${escapeHtml(t.assignee_name)}</td>
+          <td><span class="badge prio-${t.priority}">${t.priority}</span></td>
+          <td><span class="badge status-${t.status}">${STATUS_LABEL[t.status]}</span></td>
+          <td>${t.due_date ? formatDate(t.due_date) : '—'}</td>
+          <td style="text-align:right;">
+            <button class="btn btn-danger btn-sm" data-delete-task="${t.id}">Delete</button>
+          </td>
+        </tr>
+      `).join('');
+      tbody.querySelectorAll('[data-delete-task]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Delete this task?')) return;
+          try {
+            await api(`/api/tasks/${btn.dataset.deleteTask}`, { method: 'DELETE' });
+            toast('Task deleted');
+            await loadTasks();
+          } catch (err) { toast(err.message, 'error'); }
+        });
+      });
+    }
+
+    function bindForms() {
+      const taskForm = document.getElementById('taskForm');
+      const taskError = document.getElementById('taskError');
+      taskForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        taskError.style.display = 'none';
+        try {
+          await api('/api/tasks', {
+            method: 'POST',
+            body: JSON.stringify({
+              title: document.getElementById('title').value.trim(),
+              description: document.getElementById('description').value.trim(),
+              priority: document.getElementById('priority').value,
+              due_date: document.getElementById('due_date').value || null,
+              assignee_id: Number(document.getElementById('assignee').value)
+            })
+          });
+          taskForm.reset();
+          document.getElementById('priority').value = 'medium';
+          toast('Task assigned');
+          await loadTasks();
+        } catch (err) {
+          taskError.textContent = err.message;
+          taskError.style.display = 'block';
+        }
+      });
+
+      const userForm = document.getElementById('userForm');
+      const userError = document.getElementById('userError');
+      userForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        userError.style.display = 'none';
+        try {
+          await api('/api/users', {
+            method: 'POST',
+            body: JSON.stringify({
+              full_name: document.getElementById('full_name').value.trim(),
+              username: document.getElementById('new_username').value.trim(),
+              password: document.getElementById('new_password').value,
+              role: document.getElementById('role').value
+            })
+          });
+          userForm.reset();
+          document.getElementById('role').value = 'member';
+          toast('User created');
+          await loadUsers();
+        } catch (err) {
+          userError.textContent = err.message;
+          userError.style.display = 'block';
+        }
+      });
+    }
+
+    (async () => {
+      currentUser = await requireSession('admin');
+      if (!currentUser) return;
+      document.getElementById('header').innerHTML = renderHeader(currentUser, 'admin');
+      attachLogout();
+      bindForms();
+      await loadUsers();
+      await loadTasks();
+    })();
+  </script>
+</body>
+</html>

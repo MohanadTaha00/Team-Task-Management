@@ -71,11 +71,3 @@ All endpoints use JSON. Session cookie is set on `POST /api/login`.
 | POST    | `/api/users`              | admin         | Create a new user                     |
 | DELETE  | `/api/users/:id`          | admin         | Delete a user (cascades their tasks)  |
 
-## Security notes
-
-This project is intentionally small and classroom-friendly. Before deploying to
-the real internet you should:
-
-1. Set a strong `SESSION_SECRET` environment variable.
-2. Put the app behind HTTPS and set `cookie.secure = true` in `server.js`.
-3. Add rate-limiting on `/api/login`.
